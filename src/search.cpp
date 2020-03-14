@@ -2020,7 +2020,6 @@ score_t Search::quiesce(int ply,int depth)
        score_t try_score;
        BoardState state(board.state);
        const ColorType oside = board.oppositeSide();
-       Bitboard disc(board.getPinned(board.kingSquare(oside),board.sideToMove(),board.sideToMove()));
        QSearchMoveGenerator mg(board,hashMove);
        Move move;
        while (!IsNull(move=mg.nextMove())) {
@@ -2041,39 +2040,35 @@ score_t Search::quiesce(int ply,int depth)
                cout << endl;
            }
 #endif
-           if (!MovesEqual(move,hashMove)) {
-               // Futility pruning
-               if (!board.wouldCheck(move) &&
-                   !passedPawnPush(board,move) &&
-                   node->beta > -Constants::TABLEBASE_WIN &&
-                   (Capture(move) == Pawn || board.getMaterial(oside).pieceCount() > 1)) {
-                   const score_t optScore = Params::Gain(move) + QSEARCH_FORWARD_PRUNE_MARGIN + node->eval;
-                   if (optScore < node->best_score) {
-#ifdef _TRACE
-                       if (mainThread()) {
-                           indent(ply); cout << "pruned (futility)" << endl;
-                       }
-#endif
-                       continue;
-                   }
-               }
-               // See pruning
-               score_t neededGain = node->best_score - node->eval - QSEARCH_FORWARD_PRUNE_MARGIN;
-               if (Params::PieceValue(Capture(move)) - Params::PieceValue(PieceMoved(move)) <= neededGain &&
-                   node->beta > -Constants::TABLEBASE_WIN &&
-                   !passedPawnPush(board,move) &&
-                   !disc.isSet(StartSquare(move)) &&
-                   !seeSign(board,move,std::max<score_t>(0,neededGain))) {
+           // Futility pruning
+           if (!board.wouldCheck(move) &&
+               //!passedPawnPush(board,move) &&
+               node->beta > -Constants::TABLEBASE_WIN &&
+               (Capture(move) == Pawn || board.getMaterial(oside).pieceCount() > 1)) {
+               const score_t optScore = Params::Gain(move) + QSEARCH_FORWARD_PRUNE_MARGIN + node->eval;
+               if (optScore < node->best_score) {
 #ifdef _TRACE
                    if (mainThread()) {
-                       indent(ply); cout << "pruned (SEE)" << endl;
+                       indent(ply); cout << "pruned (futility)" << endl;
                    }
-
 #endif
                    continue;
                }
            }
+           // See pruning
+           score_t neededGain = node->best_score - node->eval - QSEARCH_FORWARD_PRUNE_MARGIN;
+           if (Params::PieceValue(Capture(move)) - Params::PieceValue(PieceMoved(move)) <= neededGain &&
+               node->beta > -Constants::TABLEBASE_WIN &&
+               !seeSign(board,move,std::max<score_t>(0,neededGain))) {
+#ifdef _TRACE
+               if (mainThread()) {
+                   indent(ply); cout << "pruned (SEE)" << endl;
+               }
 
+#endif
+               continue;
+           }
+           
            node->last_move = move;
            board.doMove(move);
            if (!board.wasLegal(move)) {
@@ -2118,6 +2113,7 @@ score_t Search::quiesce(int ply,int depth)
        }
        // Do checks in qsearch
        if (depth >= 1-srcOpts.checks_in_qsearch) {
+           Bitboard disc(board.getPinned(board.kingSquare(oside),board.sideToMove(),board.sideToMove()));
            QSearchCheckGenerator mg(board,disc);
            Move move;
            while (!IsNull(move = mg.nextCheck())) {
